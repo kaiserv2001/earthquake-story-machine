@@ -48,6 +48,9 @@
 | 3.5 | QA pass: B1 (serializer match), B3, B4 + e2e proof | 3.2–3.4 | `qa/04_pipeline_qa.md` + `qa/gate_sprint1.md` | ☐ |
 
 ## Notes
+- **Deviation (2026-06-10, backend):** local env has only the .NET 10 SDK/runtime. Projects target net8.0 (ref packs) with root `Directory.Build.props` setting `RollForward=Major` so binaries execute locally on .NET 10. Azure deployment is unaffected (Functions host supplies net8); Sprint 2 infra must NOT carry RollForward assumptions into Bicep/CI. Classic `.sln` format used (not .slnx) for EF/CI tooling compatibility.
+- **Plan fix (2026-06-10, lead):** `Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore` added to the Functions csproj in the plan (required by `ConfigureFunctionsWebApplication()`); commit 105cdc3.
+- **Approved deviation (2026-06-10, lead/QA):** Service Bus message serialization uses shared `QuakeJson.Options` (Web defaults) in Quake.Core on BOTH poller and builder sides, superseding the plan's bare `JsonSerializer` calls (B1 prevention).
 - Local infra for Wave 3 (Azurite/SQL/SB emulator): if Sprint 2's docker-compose isn't ready, backend-engineer may write a minimal throwaway compose file; infra-engineer replaces it in Sprint 2.
 - Unsplash access key and SQL dev password come from the user — request once, store in `local.settings.json` (gitignored) only.
 - Single writer rule: only the orchestrator edits this file (status ☐ → ☑, notes).
