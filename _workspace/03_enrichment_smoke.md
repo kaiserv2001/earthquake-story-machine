@@ -72,3 +72,24 @@ Parsed → `WikiSummary(Title: "Tokyo", Extract: "Tokyo, officially ...", PageUr
 **Disambiguation case:** `GET .../page/summary/Mercury?redirect=true` → `"type": "disambiguation"` → client returns `null` (miss).
 
 **Miss case:** `GET .../page/summary/Zxqwvb_no_such_place_12345` → HTTP 404 → client returns `null`.
+
+---
+
+## Open-Meteo — `OpenMeteoClient` (`IWeatherClient`) — VERIFIED
+
+**Constraints honored:** no key; `current=` params comma-joined; response `current` object mirrors the requested params.
+
+**Request:**
+```
+curl "https://api.open-meteo.com/v1/forecast?latitude=35.6895&longitude=139.6917&current=temperature_2m,wind_speed_10m,weather_code"
+```
+
+**Response (trimmed):**
+```json
+{
+  "current_units": { "temperature_2m": "°C", "wind_speed_10m": "km/h", "weather_code": "wmo code" },
+  "current": { "time": "2026-06-10T13:15", "temperature_2m": 18.1, "wind_speed_10m": 1.1, "weather_code": 2 }
+}
+```
+Parsed → `WeatherSnapshot(TemperatureC: 18.1, WindSpeedKmh: 1.1, WeatherCode: 2, Description: "Partly cloudy")`.
+Unknown/unmapped WMO codes fall back to Description "Unknown"; a missing `current` object returns null.
