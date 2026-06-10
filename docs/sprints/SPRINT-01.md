@@ -45,7 +45,11 @@
 | 3.2 | T14 UsgsPollerFunction | 3.1, 2.2, 2.3 | poller publishes fresh quakes | ☑ |
 | 3.3 | T15 StoryBuilderFunction | 3.1, 2.1, 2.4 | builder writes Blob + SQL | ☑ |
 | 3.4 | T16 StoryCardsApiFunction | 3.1 | API + **publish `_workspace/api-contract.md`** | ☑ |
-| 3.5 | QA pass: B1 (serializer match), B3, B4 + e2e proof | 3.2–3.4 | `qa/04_pipeline_qa.md` + `qa/gate_sprint1.md` | ☐ |
+| 3.5 | QA pass: B1 (serializer match), B3, B4 + e2e proof | 3.2–3.4 | `qa/04_pipeline_qa.md` + `qa/gate_sprint1.md` | ☑ |
+
+## Result
+
+**GATE: GO (2026-06-10)** — zero defects across QA passes 01–04; build 0/0 `-warnaserror`, tests 9/9; B1/B3 proven by compiled round-trip harness with negative controls; host boot live-verified (func 4.12.0, all 4 functions index). **Execution-deferred:** full live poller→queue→builder→blob→SQL run needs real Service Bus + SQL (or Docker daemon) — close-out procedure in `_workspace/qa/gate_sprint1.md`. Carry-forwards to Sprint 2: Unsplash success-path re-verify on key arrival; RollForward must not leak into Bicep/CI; Bicep app settings must mirror B4 keys; EF migrations use `-s src/Quake.Data`.
 
 ## Notes
 - **Deviation (2026-06-10, backend):** local env has only the .NET 10 SDK/runtime. Projects target net8.0 (ref packs) with root `Directory.Build.props` setting `RollForward=Major` so binaries execute locally on .NET 10. Azure deployment is unaffected (Functions host supplies net8); Sprint 2 infra must NOT carry RollForward assumptions into Bicep/CI. Classic `.sln` format used (not .slnx) for EF/CI tooling compatibility.
