@@ -41,10 +41,10 @@
 ## Wave 3 — Functions assembly (backend-engineer; needs both lanes)
 | # | Plan task | Depends on | Deliverable | Status |
 |---|---|---|---|---|
-| 3.1 | T13 Program.cs DI + host/local.settings | 2.1–2.9 | host boots (`func start`) | ☐ |
-| 3.2 | T14 UsgsPollerFunction | 3.1, 2.2, 2.3 | poller publishes fresh quakes | ☐ |
-| 3.3 | T15 StoryBuilderFunction | 3.1, 2.1, 2.4 | builder writes Blob + SQL | ☐ |
-| 3.4 | T16 StoryCardsApiFunction | 3.1 | API + **publish `_workspace/api-contract.md`** | ☐ |
+| 3.1 | T13 Program.cs DI + host/local.settings | 2.1–2.9 | host boots (`func start`) | ☑ |
+| 3.2 | T14 UsgsPollerFunction | 3.1, 2.2, 2.3 | poller publishes fresh quakes | ☑ |
+| 3.3 | T15 StoryBuilderFunction | 3.1, 2.1, 2.4 | builder writes Blob + SQL | ☑ |
+| 3.4 | T16 StoryCardsApiFunction | 3.1 | API + **publish `_workspace/api-contract.md`** | ☑ |
 | 3.5 | QA pass: B1 (serializer match), B3, B4 + e2e proof | 3.2–3.4 | `qa/04_pipeline_qa.md` + `qa/gate_sprint1.md` | ☐ |
 
 ## Notes
