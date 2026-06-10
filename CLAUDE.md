@@ -14,3 +14,4 @@ Event-driven C#/.NET 8 Azure portfolio project: USGS quakes → Service Bus → 
 | Date | Change | Target | Reason |
 |------|--------|--------|--------|
 | 2026-06-10 | Initial harness: 5 agents (backend, enrichment, frontend, infra, qa), 6 skills, orchestrator | all | — |
+| 2026-06-11 | Sprint 1 executed → gate GO, 0 defects; no harness changes needed. Watch-item: enrichment-engineer needed two nudges to start (possible spawn-prompt issue if it recurs in Sprint 2) | docs/sprints/SPRINT-01.md | sprint close-out |
