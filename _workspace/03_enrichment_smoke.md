@@ -93,3 +93,33 @@ curl "https://api.open-meteo.com/v1/forecast?latitude=35.6895&longitude=139.6917
 ```
 Parsed → `WeatherSnapshot(TemperatureC: 18.1, WindSpeedKmh: 1.1, WeatherCode: 2, Description: "Partly cloudy")`.
 Unknown/unmapped WMO codes fall back to Description "Unknown"; a missing `current` object returns null.
+
+---
+
+## Unsplash — `UnsplashClient` (`IPhotoClient`) — UNVERIFIED — needs key from user
+
+**No access key available yet.** `local.settings.json` holds the placeholder `<unsplash-access-key>`, and an
+unauthenticated call returns **HTTP 401**:
+```
+curl -o /dev/null -w "%{http_code}" \
+  "https://api.unsplash.com/search/photos?query=Tokyo&per_page=3&orientation=landscape"
+# -> 401
+```
+Client implemented against the documented `GET /search/photos` response shape; 401 (no/bad key) → returns `[]`
+(empty list), so a missing key degrades the card to no photos rather than failing it.
+
+**Documented response shape parsed (Unsplash API docs):**
+```json
+{
+  "results": [
+    {
+      "urls": { "regular": "https://images.unsplash.com/...&w=1080", "small": "https://images.unsplash.com/...&w=400" },
+      "user": { "name": "Jane Doe", "links": { "html": "https://unsplash.com/@janedoe" } }
+    }
+  ]
+}
+```
+Expected parse → `PhotoInfo(ImageUrl: urls.regular, ThumbUrl: urls.small, PhotographerName: user.name, PhotographerUrl: user.links.html)`.
+Photographer attribution fields are preserved per Unsplash API terms.
+
+**TODO (qa-engineer / user):** re-run with a real `Authorization: Client-ID <key>` header once a key is provisioned, and replace this entry with a live request/response sample.
