@@ -65,6 +65,7 @@
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="1.23.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="1.17.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.2.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="1.3.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Timer" Version="4.3.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.ServiceBus" Version="5.16.0" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.21.0" />
