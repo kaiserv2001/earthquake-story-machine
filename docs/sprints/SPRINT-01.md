@@ -53,6 +53,7 @@
 - **Approved deviation (2026-06-10, lead/QA):** Service Bus message serialization uses shared `QuakeJson.Options` (Web defaults) in Quake.Core on BOTH poller and builder sides, superseding the plan's bare `JsonSerializer` calls (B1 prevention).
 - **Deviation (2026-06-10, backend, #5):** plan's assembler photos call hit nullability warning-as-error; fixed with explicit `Safe<IReadOnlyList<PhotoInfo>>` wrapper, behavior unchanged.
 - **Deviation (2026-06-10, backend, #7):** `dotnet-ef` tools v10.0.8 (only SDK available) against EF Core 8 packages; Initial migration generated correctly. `DesignTimeQuakeDbContextFactory` added in Quake.Data per plan's sanctioned fallback.
+- **Process note (2026-06-10, QA #15):** future EF migrations must run with `-s src/Quake.Data` (DesignTimeQuakeDbContextFactory), NOT the plan's `-s src/Quake.Functions` form — Functions lacks the EF Design package.
 - Local infra for Wave 3 (Azurite/SQL/SB emulator): if Sprint 2's docker-compose isn't ready, backend-engineer may write a minimal throwaway compose file; infra-engineer replaces it in Sprint 2.
 - Unsplash access key and SQL dev password come from the user — request once, store in `local.settings.json` (gitignored) only.
 - Single writer rule: only the orchestrator edits this file (status ☐ → ☑, notes).
