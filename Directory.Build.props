@@ -1,0 +1,13 @@
+<Project>
+  <!--
+    Environment deviation: only the .NET 10 SDK/runtime is installed in this
+    workspace; no .NET 8 runtime is present. Projects still TARGET net8.0 (per the
+    implementation plan and dotnet-conventions skill) and build against the net8.0
+    NuGet reference packs, but RollForward=Major lets the produced net8.0 binaries
+    EXECUTE on the .NET 10 shared runtime (tests, func host, `dotnet run`).
+    Remove this once a real .NET 8 runtime is available.
+  -->
+  <PropertyGroup>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+</Project>
