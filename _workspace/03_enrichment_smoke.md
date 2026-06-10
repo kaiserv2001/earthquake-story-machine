@@ -123,3 +123,27 @@ Expected parse → `PhotoInfo(ImageUrl: urls.regular, ThumbUrl: urls.small, Phot
 Photographer attribution fields are preserved per Unsplash API terms.
 
 **TODO (qa-engineer / user):** re-run with a real `Authorization: Client-ID <key>` header once a key is provisioned, and replace this entry with a live request/response sample.
+
+---
+
+## USGS FDSN history — `UsgsHistoryClient` (`IQuakeHistoryClient`) — VERIFIED
+
+**Constraints honored:** `count` endpoint for the cheap 30-day count; `query&orderby=magnitude&limit=1` for max magnitude over the trailing year. Dates formatted `yyyy-MM-dd` invariant.
+
+**Request (30-day count, 300 km around Tokyo):**
+```
+curl "https://earthquake.usgs.gov/fdsnws/event/1/count?format=geojson&latitude=35.6895&longitude=139.6917&maxradiuskm=300&starttime=2026-05-11&endtime=2026-06-10"
+```
+**Response:**
+```json
+{ "count": 10, "maxAllowed": 20000 }
+```
+
+**Request (max magnitude, trailing year):**
+```
+curl "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=35.6895&longitude=139.6917&maxradiuskm=300&starttime=2025-06-10&endtime=2026-06-10&orderby=magnitude&limit=1"
+```
+**Response (trimmed):** one feature, `properties.mag = 5.9`.
+
+Parsed → `HistoricalContext(QuakesLast30DaysWithin300Km: 10, MaxMagnitudeLastYear: 5.9)`.
+If the year query has no features or `mag` is null, MaxMagnitudeLastYear is left null; a failing count request returns null overall.
