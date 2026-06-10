@@ -1,0 +1,7 @@
+bin/
+obj/
+*.user
+local.settings.json
+.vs/
+TestResults/
+_workspace_prev/
