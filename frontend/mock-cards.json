@@ -1,0 +1,119 @@
+{
+  "_comment": "Offline fixture matching _workspace/api-contract.md. Used only when USE_MOCK=true in app.js. 'cards' = GET /api/cards; 'details' keyed by quakeId = GET /api/cards/{id}. Includes a fully-enriched card, a null-section degraded card, and an ocean (no-geocode) card to exercise null safety.",
+  "cards": [
+    {
+      "quakeId": "us7000srzt",
+      "magnitude": 5.1,
+      "place": "7 km NW of Nuing, Philippines",
+      "city": "General Santos",
+      "country": "Philippines",
+      "occurredUtc": "2026-06-11T02:00:00+00:00"
+    },
+    {
+      "quakeId": "us7000degr",
+      "magnitude": 6.8,
+      "place": "120 km SSW of Tórshavn, Faroe Islands",
+      "city": null,
+      "country": null,
+      "occurredUtc": "2026-06-10T20:30:00+00:00"
+    },
+    {
+      "quakeId": "us7000weak",
+      "magnitude": 4.6,
+      "place": "Central Mid-Atlantic Ridge",
+      "city": null,
+      "country": null,
+      "occurredUtc": "2026-06-09T22:15:00+00:00"
+    }
+  ],
+  "details": {
+    "us7000srzt": {
+      "quake": {
+        "id": "us7000srzt",
+        "magnitude": 5.1,
+        "place": "7 km NW of Nuing, Philippines",
+        "latitude": 5.6757,
+        "longitude": 125.3874,
+        "depthKm": 61.705,
+        "occurredUtc": "2026-06-11T08:00:00+00:00",
+        "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000srzt"
+      },
+      "location": {
+        "city": "General Santos",
+        "region": "Soccsksargen",
+        "country": "Philippines",
+        "displayName": "General Santos, Soccsksargen, Philippines"
+      },
+      "wiki": {
+        "title": "General Santos",
+        "extract": "General Santos, officially the City of General Santos, is a highly urbanized city in the Soccsksargen region of the Philippines. Known as the Tuna Capital of the Philippines, it sits on the shores of Sarangani Bay.",
+        "pageUrl": "https://en.wikipedia.org/wiki/General_Santos",
+        "thumbnailUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/example.jpg"
+      },
+      "weather": {
+        "temperatureC": 28.4,
+        "windSpeedKmh": 11.2,
+        "weatherCode": 2,
+        "description": "Partly cloudy"
+      },
+      "photos": [
+        {
+          "imageUrl": "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1080",
+          "thumbUrl": "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400",
+          "photographerName": "Qingbao Meng",
+          "photographerUrl": "https://unsplash.com/@artic_studios"
+        },
+        {
+          "imageUrl": "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1080",
+          "thumbUrl": "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=400",
+          "photographerName": "Bailey Zindel",
+          "photographerUrl": "https://unsplash.com/@baileyzindel"
+        }
+      ],
+      "history": {
+        "quakesLast30DaysWithin300Km": 7,
+        "maxMagnitudeLastYear": 6.4
+      },
+      "generatedUtc": "2026-06-11T08:02:13.118+00:00"
+    },
+    "us7000degr": {
+      "quake": {
+        "id": "us7000degr",
+        "magnitude": 6.8,
+        "place": "120 km SSW of Tórshavn, Faroe Islands",
+        "latitude": 61.0,
+        "longitude": -7.6,
+        "depthKm": 10.0,
+        "occurredUtc": "2026-06-11T04:30:00+00:00",
+        "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000degr"
+      },
+      "location": null,
+      "wiki": null,
+      "weather": null,
+      "photos": [],
+      "history": {
+        "quakesLast30DaysWithin300Km": 1,
+        "maxMagnitudeLastYear": null
+      },
+      "generatedUtc": "2026-06-11T04:32:00.000+00:00"
+    },
+    "us7000weak": {
+      "quake": {
+        "id": "us7000weak",
+        "magnitude": 4.6,
+        "place": "Central Mid-Atlantic Ridge",
+        "latitude": 0.42,
+        "longitude": -24.1,
+        "depthKm": 8.0,
+        "occurredUtc": "2026-06-09T22:15:00+00:00",
+        "url": null
+      },
+      "location": null,
+      "wiki": null,
+      "weather": null,
+      "photos": [],
+      "history": null,
+      "generatedUtc": "2026-06-09T22:17:00.000+00:00"
+    }
+  }
+}
