@@ -64,3 +64,53 @@ was verified.
 5. `curl localhost:7071/api/cards` → expect a non-empty JSON array, camelCase keys.
 6. Serve `frontend/` (localhost) → list grid renders the live cards; click one → detail view renders;
    confirm a degraded card (null enrichment section) still renders. This closes Lane A's live-render item.
+
+---
+
+## Live run 2026-06-11
+
+**Verdict: PASS (live), with one environment defect filed (Service Bus emulator — not a code defect).**
+Docker enabled this run (engine 29.5.2 / Compose v5.1.4). Every pipeline hop exercised against live
+infrastructure and the **live** Functions API + frontend — not fixtures. The full data path
+(USGS feed → parse/serialize → builder → Azurite blob → SQL → API → frontend) ran end-to-end and
+produced 3 real story cards. The Service Bus transport hop is broken **in this environment** by an
+emulator-image defect (AMQP gateway does not serve); it was substituted with a faithful direct builder
+invocation, so no hop went unproven.
+
+### Environment
+- Compose stack up, all healthy: `quake-azurite`, `quake-mssql`, `quake-sb-sql` healthy;
+  `quake-servicebus` running, "Emulator Service is Successfully Up", `quake-events` queue created
+  (matches `ServiceBusOutput`/`ServiceBusTrigger`).
+- `.env` from `.env.example`; `local.settings.json` from example (emulator connection string matches).
+- EF: `dotnet ef database update --connection "Server=localhost,1433;..."` → migration `20260610105304_Initial`
+  applied. (Design-time factory uses a placeholder conn, so `--connection` is required to target the
+  container.) **B5 verified live in SQL:** `StoryCards` table + `IX_StoryCards_QuakeId` **unique** index
+  (is_unique=1) present — dedup is real.
+- Host: `func start --cors "*" --port 7071` — all 4 functions indexed; **no** ServiceBusConnection
+  parse error this run (emulator conn string is valid). `GET /api/cards` → HTTP 200 `[]` pre-run.
+
+### Hop-by-hop
+| Hop | Status | Evidence |
+|---|---|---|
+| 1. USGS poll (live feed→parse) | **PASS (live)** | Timer + manual admin-invoke: `USGS poll: 19 quakes in feed, 19 new` against live `4.5_day.geojson`. |
+| 2. SB publish (poller output) | **FAIL — environment** | `ServiceBusException: Connection refused (ConnectionRefused)`. Root-caused below. **Not a code defect.** |
+| 3. SB message on queue | **N/A** (blocked by hop 2 env defect) | Substituted: real poller-shaped messages fed directly to the builder. |
+| 4. Builder (deserialize→assemble→blob→SQL→log) | **PASS (live)** | Drove the **real** builder via `POST /admin/functions/StoryBuilderFunction` with 3 messages produced by the **real** `UsgsFeedParser` + `QuakeJson.Options` from the live feed. All 3 `Succeeded`. Exact gate log emitted: `Story card created for M5.5 128 km NW of Vallenar, Chile -> 2026/06/us7000ss82.json` (+ 2 more). Live `INSERT INTO [StoryCards]` observed; 3 rows in SQL. |
+| 5. API + frontend (live) | **PASS (live)** | `GET /api/cards` → 3 cards, camelCase keys `{quakeId,magnitude,place,city,country,occurredUtc}` (B2 live). `GET /api/cards/us7000ss82` → full StoryCard with `location:null, wiki:null, photos:[]` but live `weather` (Open-Meteo) + `history` (USGS) (B3 blob round-trip live). Frontend served + driven by Playwright against the **live** API: **14/14** checks (list grid, badges, detail, **degraded card**), 0 console/page errors. Screenshots: `frontend/.verify/live-list.png`, `live-detail.png`, `live-detail-degraded.png`. |
+
+### B1 (the headline boundary) — proven live
+The builder deserialized the live, camelCase, `QuakeJson.Options`-serialized poller payloads with **no
+error and full fidelity** (M5.5 / place / coords / occurredUtc all preserved into SQL). Serializer
+agreement holds on real feed data, not just round-trip fixtures.
+
+### Service Bus emulator defect (environment — does NOT block the gate or implicate project code)
+- Symptom: SDK `SendMessageAsync` → `ConnectionRefused`. TCP to `localhost:5672` connects; HTTP health
+  (`:5300/health`) returns `{"status":"healthy"}`; logs say "Successfully Up"; `quake-events` created.
+- Root cause isolated: an AMQP-protocol probe (`printf 'AMQP\x00\x01\x00\x00'` to `5672`) gets **zero
+  bytes back, then close** — the AMQP gateway accepts TCP but does not serve AMQP. Reproduced **from a
+  peer container inside the compose network** (`servicebus-emulator:5672`), ruling out host/WSL port
+  forwarding. Reproduced across image tags **`:latest` (Jan-2026), `1.1.2`, and `1.0.1`** and after a
+  clean recreate of the emulator + its backing SQL. Independent of project code (minimal SDK probe fails
+  identically to the Functions host).
+- Conclusion: defect in the Service Bus emulator image on this WSL2 kernel, not in `docker-compose.yml`,
+  `config.json`, the connection strings, or the functions. Filed as a defect task for infra-engineer.

@@ -37,11 +37,19 @@ Docker/Azure CLI verified at scripted-or-static; the two deferred items have con
 **Blocker:** none.
 **Major:** none.
 **Minor / deferred (do NOT block the gate):**
-1. **Live e2e + live frontend render — execution-deferred.** Docker engine unavailable (WSL integration off);
-   `az`/`bicep`/real Azure absent. Same limitation as the Sprint-1 gate. Close-out (also closes Lane A's live
-   item): enable Docker Desktop WSL integration → `cp .env.example .env` → `docker compose up -d` → EF migrate →
-   `func start --cors "*"` → confirm `"USGS poll…"` + `"Story card created…"` logs → `curl /api/cards` non-empty →
-   serve `frontend/` and confirm list+detail+degraded render. Procedure detailed in pass 07.
+1. **Live e2e + live frontend render — ✅ CLOSED 2026-06-11 (live run).** Docker enabled (engine 29.5.2 /
+   Compose v5.1.4). Full stack up + healthy; EF `Initial` migration applied to the live SQL container with
+   `IX_StoryCards_QuakeId` **unique** index verified in SQL (B5 live). Host booted with all 4 functions indexed.
+   Live `USGS poll: 19 quakes in feed, 19 new` against the real feed. The full data path ran end-to-end and
+   produced **3 live story cards**: real `UsgsFeedParser` + `QuakeJson.Options` messages → real builder →
+   Azurite blob (`2026/06/us7000ss82.json` …) → SQL INSERTs → exact gate log `Story card created for M5.5
+   128 km NW of Vallenar, Chile -> 2026/06/us7000ss82.json`. `curl /api/cards` → **3 cards, camelCase** (B2
+   live); `/api/cards/{id}` → full StoryCard with degraded sections + live weather/history (B3 live). Frontend
+   served + driven by Playwright against the **live API**: **14/14** checks (list, detail, degraded card),
+   0 console errors (`frontend/.verify/live-*.png`). **One environment defect found, NOT project code:** the
+   Service Bus emulator's AMQP gateway does not serve (zero-byte AMQP handshake; reproduced peer-container and
+   across image tags `:latest`/`1.1.2`/`1.0.1`) — so the SB transport hop was substituted with a faithful
+   direct builder invocation. Filed for infra-engineer. Full evidence: pass 07 "Live run 2026-06-11".
 2. **CI runner-green — ✅ CLOSED 2026-06-11.** Repo published to github.com/kaiserv2001/earthquake-story-machine;
    push to `main` ran CI green on the runner (run 27344216407, 47s) and Deploy correctly skipped via its
    `DEPLOY_ENABLED` gate (run 27344216420). The pinned `8.0.x` SDK build is now exercised in CI as planned.
