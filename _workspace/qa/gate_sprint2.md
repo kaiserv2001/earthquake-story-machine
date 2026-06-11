@@ -42,9 +42,9 @@ Docker/Azure CLI verified at scripted-or-static; the two deferred items have con
    item): enable Docker Desktop WSL integration → `cp .env.example .env` → `docker compose up -d` → EF migrate →
    `func start --cors "*"` → confirm `"USGS poll…"` + `"Story card created…"` logs → `curl /api/cards` non-empty →
    serve `frontend/` and confirm list+detail+degraded render. Procedure detailed in pass 07.
-2. **CI runner-green — execution-deferred.** `ci.yml` is actionlint-clean and the solution restores, but no
-   actual GitHub push was made here. Close-out: push a branch / open a PR and confirm the `build-test` job goes
-   green on the runner (it pins `8.0.x`; local host only has net10, so the pinned-SDK build is exercised in CI).
+2. **CI runner-green — ✅ CLOSED 2026-06-11.** Repo published to github.com/kaiserv2001/earthquake-story-machine;
+   push to `main` ran CI green on the runner (run 27344216407, 47s) and Deploy correctly skipped via its
+   `DEPLOY_ENABLED` gate (run 27344216420). The pinned `8.0.x` SDK build is now exercised in CI as planned.
 3. **`az bicep build` exact command — equivalent-only.** Validated via standalone Bicep CLI 0.44.1 (`bicep build`),
    not `az bicep build`; equivalent output. Will pass wherever Azure CLI is installed.
 4. **Informational (no code change) — API contract wording.** `_workspace/api-contract.md` says HTTP responses
