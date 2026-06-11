@@ -2,6 +2,8 @@ bin/
 obj/
 *.user
 local.settings.json
+.env
 .vs/
 TestResults/
 _workspace_prev/
+frontend/.verify/

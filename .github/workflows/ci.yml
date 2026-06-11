@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Pin the .NET 8 SDK explicitly. The projects target net8.0; we do not rely on
+      # RollForward, so the build runs on the same runtime everywhere.
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore EarthquakeStoryMachine.sln
+
+      - name: Build
+        run: dotnet build EarthquakeStoryMachine.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test EarthquakeStoryMachine.sln --configuration Release --no-build --verbosity normal

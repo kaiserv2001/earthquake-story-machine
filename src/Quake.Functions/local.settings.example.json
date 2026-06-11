@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "ServiceBusConnection": "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;",
+    "BlobStorageConnection": "UseDevelopmentStorage=true",
+    "SqlConnection": "Server=localhost,1433;Database=QuakeDb;User Id=sa;Password=LocalDev_Passw0rd!;TrustServerCertificate=true",
+    "UnsplashAccessKey": "<unsplash-access-key>",
+    "UsgsMinMagnitude": "4.5",
+    "UsgsPollSchedule": "0 */5 * * * *"
+  }
+}
