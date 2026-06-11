@@ -1,0 +1,43 @@
+{
+  "live_feature_count": 21,
+  "first_feature": {
+    "type": "Feature",
+    "properties": {
+      "mag": 4.9,
+      "place": "Mariana Islands region",
+      "time": 1781089840128,
+      "updated": 1781091336040,
+      "tz": null,
+      "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000ss0c",
+      "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us7000ss0c.geojson",
+      "felt": null,
+      "cdi": null,
+      "mmi": null,
+      "alert": null,
+      "status": "reviewed",
+      "tsunami": 0,
+      "sig": 369,
+      "net": "us",
+      "code": "7000ss0c",
+      "ids": ",us7000ss0c,",
+      "sources": ",us,",
+      "types": ",origin,phase-data,",
+      "nst": 51,
+      "dmin": 6.376,
+      "rms": 0.89,
+      "gap": 85,
+      "magType": "mb",
+      "type": "earthquake",
+      "title": "M 4.9 - Mariana Islands region"
+    },
+    "geometry": {
+      "type": "Point",
+      "coordinates": [
+        145.9058,
+        21.6436,
+        10
+      ]
+    },
+    "id": "us7000ss0c"
+  }
+}

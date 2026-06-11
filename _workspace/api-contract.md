@@ -3,8 +3,11 @@
 > Status: **FINAL** — task #19 (StoryCardsApiFunction) landed and the solution builds clean (commit pending).
 > Owner: backend-engineer. Consumed by: frontend-engineer (Sprint 2 Static Web App).
 > This shape is stable; changes go through backend-engineer.
-> Serialization: all responses use `JsonSerializerDefaults.Web` (camelCase, case-insensitive)
-> via `QuakeJson.Options` — the same options as Service Bus messages and blob cards.
+> Serialization: all responses use `JsonSerializerDefaults.Web` (camelCase, case-insensitive).
+> Note: the HTTP layer serializes via ASP.NET Core's MVC formatter (Web defaults), NOT
+> `QuakeJson.Options` — they coincide on casing today, but a `QuakeJson.Options` naming-policy
+> change would not affect API output. Service Bus messages and blob cards use `QuakeJson.Options`.
+> (Clarified at Sprint-2 QA, pass 05 — behavior unchanged.)
 
 Base path: the Functions app exposes routes under `/api`. The Static Web App linked
 backend proxies `/api/*` to the Functions host, so the frontend calls `/api/cards`
