@@ -10,8 +10,8 @@
 > (Clarified at Sprint-2 QA, pass 05 — behavior unchanged.)
 
 Base path: the Functions app exposes routes under `/api`. The Static Web App linked
-backend proxies `/api/*` to the Functions host, so the frontend calls `/api/cards`
-and `/api/cards/{quakeId}` directly.
+backend proxies `/api/*` to the Functions host, so the frontend calls `/api/cards`,
+`/api/cards/{quakeId}`, and `/api/feed` directly.
 
 ---
 
@@ -174,6 +174,62 @@ removes the card. `photos` is always present but may be an empty array.
 | `maxMagnitudeLastYear` | number \| null | `null` if no prior quakes in range. |
 
 `generatedUtc` (string, ISO-8601, always present) — when the card was assembled.
+
+---
+
+## GET /api/feed
+
+Returns an **Atom 1.0** (RFC 4287) XML feed of recent story cards for feed readers.
+Same source, ordering, and cap as `GET /api/cards`: the 50 most recent quakes by
+`occurredUtc` descending, from the SQL metadata table (no blob fetch per entry).
+
+- **Auth:** anonymous
+- **200** `application/atom+xml; charset=utf-8` — a well-formed Atom document (UTF-8,
+  with XML declaration). The feed is valid and parseable even when empty (zero entries).
+
+### Response shape
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Earthquake Story Machine</title>
+  <subtitle>Recent earthquakes, told as story cards</subtitle>
+  <id>tag:earthquake-story-machine,2026:feed</id>
+  <updated>2026-06-11T22:13:42Z</updated>
+  <link rel="self" href="http://localhost:7071/api/feed" />
+  <generator>Earthquake Story Machine</generator>
+  <entry>
+    <title>M5.1 — Nuing, Philippines</title>
+    <id>tag:earthquake-story-machine,2026:quake:us7000srzt</id>
+    <updated>2026-06-11T22:13:42Z</updated>
+    <published>2026-06-11T22:13:42Z</published>
+    <summary>A magnitude 5.1 earthquake occurred at 7 km NW of Nuing, Philippines on 2026-06-11 22:13 UTC.</summary>
+  </entry>
+</feed>
+```
+
+### Feed-level elements
+
+| Element | Notes |
+|---|---|
+| `feed/id` | Constant tag URI `tag:earthquake-story-machine,2026:feed` — identifies the feed itself, never changes. |
+| `feed/updated` | RFC 3339 UTC; equals the **newest** entry's time. Falls back to request time when the feed is empty. |
+| `feed/link[@rel="self"]` | The absolute URL the feed was requested from (echoes the request URL). |
+
+### Per-entry elements
+
+| Element | Notes |
+|---|---|
+| `entry/id` | Stable opaque tag URI `tag:earthquake-story-machine,2026:quake:{quakeId}` — derived from the USGS quake id; the same card always yields the same entry id. |
+| `entry/title` | `M{magnitude} — {location}` where location is `City, Country` → `Country` → `place`, whichever is first available. |
+| `entry/updated` / `entry/published` | RFC 3339 UTC; the quake's `occurredUtc`. |
+| `entry/summary` | Plain-text one-line description (magnitude, USGS place, UTC date/time). |
+
+Notes:
+- Entry order matches `/api/cards` (newest first). One `entry` per card, capped at 50.
+- All text content is XML-escaped by the serializer (`&` → `&amp;`, `<` → `&lt;`, etc.);
+  card text never breaks the document.
+- Empty feed = a valid `<feed>` with zero `<entry>` elements, not a 404.
 
 ---
 

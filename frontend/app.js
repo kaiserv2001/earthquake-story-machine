@@ -3,6 +3,7 @@
 //
 // Data flow:
 //   #/            -> list view   (GET /api/cards)
+//   #/map         -> map view    (GET /api/cards, then GET /api/cards/{id} for coords)
 //   #/card/{id}   -> detail view (GET /api/cards/{id})
 //
 // All dynamic API text is assigned via textContent / element properties, never
@@ -154,18 +155,20 @@ function renderLoading(label) {
 }
 
 // Empty state — the first thing anyone sees on a fresh deploy. Intentional, not blank.
-function renderEmpty() {
-  clear(app);
+// Returns the node so list and map views can share one consistent empty state.
+function buildEmptyState(detail) {
   const wrap = el('div', { className: 'state state--empty' });
   wrap.append(
     el('div', { className: 'state__icon', text: '🌍', attrs: { 'aria-hidden': 'true' } }),
     el('h2', { text: 'No story cards yet' }),
     el('p', {
       className: 'state__detail',
-      text: 'The machine is listening for earthquakes. Cards appear here as quakes are detected and enriched.',
+      text:
+        detail ||
+        'The machine is listening for earthquakes. Cards appear here as quakes are detected and enriched.',
     }),
   );
-  app.append(wrap);
+  return wrap;
 }
 
 // Failure state — banner with a retry button. Never a blank page.
@@ -181,6 +184,28 @@ function renderError(message, onRetry) {
   retry.addEventListener('click', onRetry);
   wrap.append(retry);
   app.append(wrap);
+}
+
+// --- View toggle (List ⇄ Map) ------------------------------------------------
+
+// Segmented control linking the list and map views. `active` is 'list' | 'map'.
+// Plain anchors so the router (hashchange) drives navigation — no JS handlers.
+function buildViewToggle(active) {
+  const toggle = el('nav', { className: 'view-toggle', attrs: { 'aria-label': 'View' } });
+  const options = [
+    ['list', '#/', 'List'],
+    ['map', '#/map', 'Map'],
+  ];
+  for (const [key, href, label] of options) {
+    const isActive = key === active;
+    const link = el('a', {
+      className: `view-toggle__btn${isActive ? ' view-toggle__btn--active' : ''}`,
+      text: label,
+      attrs: { href, 'aria-current': isActive ? 'page' : null },
+    });
+    toggle.append(link);
+  }
+  return toggle;
 }
 
 // --- List view ---------------------------------------------------------------
@@ -226,17 +251,233 @@ async function renderList() {
     return;
   }
 
+  clear(app);
+  app.append(buildViewToggle('list'));
+
   if (!Array.isArray(cards) || cards.length === 0) {
-    renderEmpty();
+    app.append(buildEmptyState());
     return;
   }
 
-  clear(app);
   const grid = el('div', { className: 'card-grid' });
   for (const summary of cards) {
     grid.append(buildCardTile(summary));
   }
   app.append(grid);
+}
+
+// --- Map view ----------------------------------------------------------------
+// Plots story-card quakes on a Leaflet map (CDN, no build step). The list endpoint
+// (GET /api/cards) carries no coordinates per the FINAL contract, so the map reads
+// lat/lon from each card's detail (GET /api/cards/{id}, quake.latitude/longitude),
+// fetched with bounded concurrency. Cards whose detail fails or lacks finite coords
+// are silently excluded — a missing coordinate degrades the map, never crashes it.
+
+const MAP_CONCURRENCY = 6;
+
+// Carto dark-matter raster tiles — free, on-theme for the seismic dark UI. Both
+// CARTO and OpenStreetMap attribution are required and rendered by Leaflet.
+const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const TILE_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+// Tier colors mirror the CSS magnitude scale (kept in sync with styles.css tokens).
+const TIER_COLOR = {
+  major: '#f85149',
+  strong: '#f0883e',
+  moderate: '#d29922',
+  minor: '#58a6ff',
+};
+
+// Load Leaflet's JS + CSS from the CDN exactly once. Resolves to the global `L`.
+let leafletPromise = null;
+function loadLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  if (leafletPromise) return leafletPromise;
+  leafletPromise = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    css.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
+    css.crossOrigin = '';
+    document.head.append(css);
+
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
+    script.crossOrigin = '';
+    script.onload = () => (window.L ? resolve(window.L) : reject(new Error('Leaflet loaded but window.L is missing')));
+    script.onerror = () => reject(new Error('Failed to load Leaflet from CDN'));
+    document.head.append(script);
+  });
+  return leafletPromise;
+}
+
+function hasFiniteCoords(quake) {
+  return (
+    quake &&
+    Number.isFinite(quake.latitude) &&
+    Number.isFinite(quake.longitude) &&
+    Math.abs(quake.latitude) <= 90 &&
+    Math.abs(quake.longitude) <= 180
+  );
+}
+
+// Resolve each summary to {summary, quake} by fetching its detail card, with a
+// concurrency cap. Per-card failures resolve to null (excluded) rather than reject —
+// one dead detail must not blank the whole map.
+async function fetchCoordsForCards(cards) {
+  const results = new Array(cards.length).fill(null);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < cards.length) {
+      const index = cursor++;
+      const summary = cards[index];
+      try {
+        const card = await fetchCard(summary.quakeId);
+        if (card && hasFiniteCoords(card.quake)) {
+          results[index] = { summary, quake: card.quake };
+        }
+      } catch {
+        // swallow — this card is simply absent from the map
+      }
+    }
+  }
+  const pool = Array.from({ length: Math.min(MAP_CONCURRENCY, cards.length) }, worker);
+  await Promise.all(pool);
+  return results.filter(Boolean);
+}
+
+// Popup body for a marker. Built as DOM (textContent throughout) then handed to
+// Leaflet as an element, so third-party place names never touch innerHTML.
+function buildMarkerPopup(summary, quake) {
+  const wrap = el('div', { className: 'map-popup' });
+  const head = el('div', { className: 'map-popup__head' });
+  head.append(magnitudeBadge(quake.magnitude));
+  head.append(el('span', { className: 'map-popup__time', text: relativeTime(summary.occurredUtc) }));
+  wrap.append(head);
+
+  wrap.append(el('p', { className: 'map-popup__place', text: quake.place || summary.place }));
+
+  const locationParts = [summary.city, summary.country].filter(Boolean);
+  if (locationParts.length) {
+    wrap.append(el('p', { className: 'map-popup__loc', text: locationParts.join(', ') }));
+  }
+
+  wrap.append(
+    el('a', {
+      className: 'map-popup__link',
+      text: 'View story card →',
+      attrs: { href: `#/card/${encodeURIComponent(summary.quakeId)}` },
+    }),
+  );
+  return wrap;
+}
+
+async function renderMap() {
+  renderLoading('Loading quake map…');
+
+  let cards;
+  try {
+    cards = await fetchCards();
+  } catch (err) {
+    clear(app);
+    app.append(buildViewToggle('map'));
+    const banner = el('div', { className: 'state state--error' });
+    banner.append(
+      el('div', { className: 'state__icon', text: '⚠️', attrs: { 'aria-hidden': 'true' } }),
+      el('h2', { text: 'Could not load the map' }),
+      el('p', { className: 'state__detail', text: err.message }),
+    );
+    const retry = el('button', { className: 'btn btn--retry', text: 'Try again' });
+    retry.addEventListener('click', renderMap);
+    banner.append(retry);
+    app.append(banner);
+    return;
+  }
+
+  // Empty data → consistent empty state (with the toggle, so the user can switch back).
+  if (!Array.isArray(cards) || cards.length === 0) {
+    clear(app);
+    app.append(buildViewToggle('map'));
+    app.append(buildEmptyState('No quakes to plot yet. The map fills in as cards are enriched.'));
+    return;
+  }
+
+  // Load Leaflet and resolve coordinates in parallel.
+  let L, plotted;
+  try {
+    [L, plotted] = await Promise.all([loadLeaflet(), fetchCoordsForCards(cards)]);
+  } catch (err) {
+    clear(app);
+    app.append(buildViewToggle('map'));
+    const banner = el('div', { className: 'state state--error' });
+    banner.append(
+      el('div', { className: 'state__icon', text: '⚠️', attrs: { 'aria-hidden': 'true' } }),
+      el('h2', { text: 'Could not load the map' }),
+      el('p', { className: 'state__detail', text: err.message }),
+    );
+    const retry = el('button', { className: 'btn btn--retry', text: 'Try again' });
+    retry.addEventListener('click', renderMap);
+    app.append(banner);
+    return;
+  }
+
+  clear(app);
+  app.append(buildViewToggle('map'));
+
+  // Status line: how many of the loaded cards had usable coordinates.
+  const excluded = cards.length - plotted.length;
+  const status = el('p', { className: 'map-status' });
+  if (plotted.length === 0) {
+    status.textContent = 'None of the current cards have coordinates to plot.';
+  } else {
+    let text = `Showing ${plotted.length} ${plotted.length === 1 ? 'quake' : 'quakes'}`;
+    if (excluded > 0) text += ` · ${excluded} without coordinates not shown`;
+    status.textContent = text;
+  }
+  app.append(status);
+
+  const mapEl = el('div', { className: 'map', attrs: { id: 'map', role: 'application', 'aria-label': 'Map of recent earthquakes' } });
+  app.append(mapEl);
+
+  // No plottable cards → keep the toggle + status; skip the (empty) map canvas.
+  if (plotted.length === 0) {
+    mapEl.classList.add('map--empty');
+    mapEl.append(buildEmptyState('No coordinates available for the current cards.'));
+    return;
+  }
+
+  const map = L.map(mapEl, { worldCopyJump: true, scrollWheelZoom: true }).setView([20, 0], 2);
+  L.tileLayer(TILE_URL, { maxZoom: 19, attribution: TILE_ATTRIBUTION }).addTo(map);
+
+  const latlngs = [];
+  for (const { summary, quake } of plotted) {
+    const tier = magnitudeTier(quake.magnitude);
+    const color = TIER_COLOR[tier] || TIER_COLOR.minor;
+    // Radius scales gently with magnitude so bigger quakes read as bigger dots.
+    const radius = 5 + Math.max(0, quake.magnitude - 4) * 2.2;
+    const marker = L.circleMarker([quake.latitude, quake.longitude], {
+      radius,
+      color,
+      weight: 2,
+      fillColor: color,
+      fillOpacity: 0.55,
+    }).addTo(map);
+    marker.bindPopup(buildMarkerPopup(summary, quake), { className: 'map-popup-shell' });
+    latlngs.push([quake.latitude, quake.longitude]);
+  }
+
+  // Frame all markers. Single marker → a sensible zoom rather than max zoom-in.
+  if (latlngs.length === 1) {
+    map.setView(latlngs[0], 5);
+  } else {
+    map.fitBounds(latlngs, { padding: [40, 40], maxZoom: 6 });
+  }
+
+  // Leaflet measures the container on init; if it was display:none or just inserted,
+  // nudge it to recompute once layout settles.
+  requestAnimationFrame(() => map.invalidateSize());
 }
 
 // --- Detail view -------------------------------------------------------------
@@ -456,9 +697,11 @@ async function renderDetail(quakeId) {
 
 function router() {
   const hash = location.hash || '#/';
-  const match = hash.match(/^#\/card\/(.+)$/);
-  if (match) {
-    renderDetail(decodeURIComponent(match[1]));
+  const cardMatch = hash.match(/^#\/card\/(.+)$/);
+  if (cardMatch) {
+    renderDetail(decodeURIComponent(cardMatch[1]));
+  } else if (hash === '#/map') {
+    renderMap();
   } else {
     renderList();
   }

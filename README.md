@@ -18,6 +18,9 @@ USGS feed ──(timer)──▶ Service Bus ──(trigger)──▶ enrichment
                                     Static Web App (frontend)
 ```
 
+A full dark-themed architecture diagram lives at [`docs/architecture.html`](docs/architecture.html)
+(self-contained HTML/SVG — open it in any browser).
+
 ## Tech stack
 
 .NET 8 (isolated worker) · Azure Functions v4 · Azure Service Bus · Azure Blob Storage ·
