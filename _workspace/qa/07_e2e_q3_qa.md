@@ -114,3 +114,148 @@ agreement holds on real feed data, not just round-trip fixtures.
   identically to the Functions host).
 - Conclusion: defect in the Service Bus emulator image on this WSL2 kernel, not in `docker-compose.yml`,
   `config.json`, the connection strings, or the functions. Filed as a defect task for infra-engineer.
+
+---
+
+## Live SB transit verification 2026-06-12
+
+**Verdict: FAIL — the SB transit hop does NOT work end-to-end through the Functions host.**
+**Root cause is NOT the prior "startup race" diagnosis; it is a Service Bus client SDK version
+incompatibility with the emulator.** The emulator itself is healthy and serves real AMQP traffic
+(proven below with a working SDK roundtrip), but the version of `Azure.Messaging.ServiceBus`
+bundled inside the Functions host's in-proc Service Bus extension (**7.17.1**) cannot connect to
+the emulator and fails every send/receive with `ConnectionRefused`. This affects BOTH the poller's
+`[ServiceBusOutput]` and the builder's `[ServiceBusTrigger]`.
+
+### Environment (this run)
+- `docker compose up -d --wait` → returned after **60s**; all services healthy including
+  `quake-sb-ready` (the new AMQP-handshake sidecar). `docker exec quake-sb-ready` AMQP header probe
+  → **8 bytes** echoed back (gateway serving). Emulator logs: "Emulator Service is Successfully Up",
+  queue `quake-events` created.
+- EF migration `20260610105304_Initial` already applied (persisted `mssql-data` volume);
+  `IX_StoryCards_QuakeId` unique index present. **0 cards pre-run** (clean slate).
+- Functions host: `func start --cors "*" --port 7071` — all 4 functions indexed
+  (`UsgsPollerFunction: timerTrigger`, `StoryBuilderFunction: serviceBusTrigger`, 2 HTTP). No
+  ServiceBusConnection parse error. `GET /api/cards` → HTTP 200 `[]` pre-run.
+
+### The transit attempt (genuine poller path) — FAILED
+Triggered the real poller via `POST /admin/functions/UsgsPollerFunction` (HTTP 202). Live feed
+fetched fine, then the SB output binding failed:
+```
+[10:14:33] Received HTTP response headers after 909ms - 200   (live USGS feed)
+[10:14:33] USGS poll: 14 quakes in feed, 14 new
+[10:14:45] Executed 'Functions.UsgsPollerFunction' (Failed, Duration=12426ms)
+[10:14:45] Exception while executing function: Functions.UsgsPollerFunction. Connection refused
+           ErrorCode: ConnectionRefused (ServiceCommunicationProblem).
+```
+Reproduced identically on a second manual invoke and on the 5-min timer fire — **the poll/parse
+succeed, only the SB publish fails**, ~12s each (SDK retry exhaustion). The exact symptom the prior
+run filed — but the prior root cause (race) is now disproven.
+
+### Root cause isolated — SDK version, not readiness, not emulator
+A standalone `Azure.Messaging.ServiceBus` console app against the **exact same** connection string
+(`…UseDevelopmentEmulator=true;`) and the **same running emulator**, run at the same time:
+| SDK version | Result |
+|---|---|
+| **7.20.1** (infra's proof version) | `SEND OK` → `RECEIVE OK` → `ROUNDTRIP VERIFIED` |
+| **7.17.2** (worker-side bundled) | `SEND FAILED: ServiceBusException: Connection refused (ConnectionRefused)` |
+
+Same code, same string, same emulator, same minute — only the SDK version differs. 7.17.x refuses;
+7.20.1 works. The Functions host transport DLLs (`bin/output/.azurefunctions/`):
+- `Azure.Messaging.ServiceBus` asm **7.17.1.0** (file 7.1700.123) — the in-host AMQP transport
+- `Microsoft.Azure.WebJobs.Extensions.ServiceBus` asm **5.13.5.0**
+- (worker-side) `Microsoft.Azure.Functions.Worker.Extensions.ServiceBus` **5.16.0** → pulls
+  `Azure.Messaging.ServiceBus` **7.17.2**
+
+All pre-7.18 — the emulator's `UseDevelopmentEmulator=true` AMQP negotiation needs a newer SDK.
+
+### Why `quake-sb-ready` gives a false-positive
+The sidecar healthcheck sends the 8-byte AMQP **protocol header** and passes when bytes echo back.
+That proves the gateway is past its SQL bootstrap, but it does **not** prove a full SASL+AMQP
+session can be opened — which is exactly what a real SDK client (and the Functions host) needs.
+So `--wait` returns "healthy" while the host's bundled SDK still can't actually connect. The
+readiness gate closes the race window but does not address the SDK incompatibility, and its green
+state is misleading for this purpose.
+
+### Builder consume side — also broken (same SDK)
+Sent a correctly-shaped, poller-equivalent `QuakeEvent` message into `quake-events` via the working
+**7.20.1** client (`SEND OK`), then watched the running host: the `StoryBuilderFunction`
+ServiceBusTrigger **never fired**. A non-destructive `PeekMessages` showed the message sitting
+**unconsumed** in the queue (`seq=2, body={"id":"qa7000transit01",…}`). The trigger listener uses
+the same in-host 7.17.1 SDK and cannot connect, so it drains nothing. (Test message drained
+afterward; queue left clean, 0 cards, API `[]`.)
+
+### Pass criterion result
+The task's pass criterion — "the message went THROUGH the emulator: poller send succeeds over AMQP
+and the ServiceBusTrigger delivers it" — is **NOT met**. Neither the genuine poller path nor the
+SDK-injected-message-into-running-builder equivalent works, because both the output binding and the
+trigger run on the incompatible in-host SDK. The transport substitution from the prior run therefore
+**cannot yet be retired**: the residual stays OPEN.
+
+### This is a code/dependency defect (owner: backend-engineer), not environment
+Unlike the prior run's finding, this is fixable in the repo:
+- **Fix:** raise the Service Bus extension so the in-host `Azure.Messaging.ServiceBus` is ≥ ~7.18
+  (the emulator-compatible line; 7.20.1 is proven working here). Bump
+  `Microsoft.Azure.Functions.Worker.Extensions.ServiceBus` (currently 5.16.0) to a version whose
+  WebJobs extension carries a ≥7.18 transport, and re-run this transit proof.
+- Re-verify: `docker compose up -d --wait`; `func start`; trigger poller → expect `Story card
+  created…` from a ServiceBusTrigger execution (not a `/admin/...StoryBuilderFunction` invoke);
+  `curl /api/cards` non-empty.
+
+### Stack state
+Left **RUNNING** (all healthy) per task instruction. Functions host left running on :7071.
+Standalone SDK probe project at `/tmp/sbprobe` (throwaway).
+
+---
+
+### Re-run after SDK fix 2026-06-12 — **PASS (live, genuine poller path, zero substitution)**
+
+**The defect is fixed and the SB transit hop now works end-to-end through the real emulator.**
+backend-engineer bumped `Microsoft.Azure.Functions.Worker.Extensions.ServiceBus` 5.16.0 → **5.24.0**
+in `src/Quake.Functions/Quake.Functions.csproj` (no code changes; attribute APIs unchanged).
+
+**SDK version confirmed loaded before judging (the prerequisite check):** killed the old host
+(it had the 7.17.1 DLLs locked in `bin/output`), `dotnet publish -c Debug -o bin/output`, restarted
+`func start --cors "*"`. The in-host transport DLLs are now:
+- `bin/output/.azurefunctions/Azure.Messaging.ServiceBus.dll` → asm **7.20.1.0** (was 7.17.1.0)
+- `bin/output/.azurefunctions/Microsoft.Azure.WebJobs.Extensions.ServiceBus.dll` → asm **5.17.0.0** (was 5.13.5.0)
+
+(Note: `func start --no-build` from the project dir misfired — "No job functions found", wrong
+`.azurefunctions` artifact root. Plain `func start` with the implicit build indexed all 4 functions
+correctly. Recorded for the README/next runner.)
+
+**Pre-run:** all compose services healthy; `GET /api/cards` → `[]`; SQL `StoryCards` = 0.
+
+**Genuine poller path — every hop live, no substitution:**
+Triggered via `POST /admin/functions/UsgsPollerFunction` (HTTP 202).
+
+Send side (poller `[ServiceBusOutput]` — the hop that failed before):
+```
+[12:13:07.286] USGS poll: 13 quakes in feed, 13 new
+[12:13:07.634] Executed 'Functions.UsgsPollerFunction' (Succeeded, Duration=1097ms)
+```
+**No `ConnectionRefused`.** Succeeded in ~1s (the broken runs took ~12s to fail on retry exhaustion).
+
+Transit + consume side (builder `[ServiceBusTrigger]` — the broker actually delivered the messages):
+```
+[12:13:07.458] Executing 'Functions.StoryBuilderFunction' (Reason='(null)', Id=…)
+[12:13:07.461] Trigger Details: MessageId: 34ac0052…, SequenceNumber: 3, DeliveryCount: 1, EnqueuedTimeUtc: 12:13:07.367…
+   … 13 trigger executions total, SequenceNumber 3–15, DeliveryCount: 1 each …
+[12:13:10.413] Story card created for M5.5 128 km NW of Vallenar, Chile -> 2026/06/us7000ss82.json
+[12:13:10.414] Executed 'Functions.StoryBuilderFunction' (Succeeded, Duration=2826ms)
+   … 13 "Story card created" lines, all 13 StoryBuilderFunction executions Succeeded …
+```
+The `Trigger Details` with broker-assigned `SequenceNumber`/`EnqueuedTimeUtc`/`DeliveryCount` are the
+definitive proof the messages **transited the emulator queue** and were delivered by the ServiceBus
+trigger — not a direct `/admin` builder invoke. SequenceNumbers begin at 3 (1–2 were prior probe
+messages), confirming the same queue. (`Reason='(null)'` is normal for a ServiceBusTrigger delivery.)
+
+**Sink:** `GET /api/cards` → **13 cards**, camelCase keys `{quakeId,magnitude,place,city,country,occurredUtc}`;
+SQL `StoryCards` = **13**. Post-run `PeekMessages` on `quake-events` → **0 remaining** (builder
+consumed every message; no stuck/unconsumed message, unlike the failed run where one sat at seq=2).
+
+**Pass criterion met:** poller SEND succeeds over AMQP **and** the ServiceBusTrigger delivers
+(13/13). The transport substitution from the live run is retired. The SB-substitution residual is
+**CLOSED**.
+
+**Stack state:** left RUNNING (all healthy); Functions host running on :7071 with the 7.20.1 SDK.

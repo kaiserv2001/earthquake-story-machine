@@ -51,8 +51,11 @@ git clone <repo-url> Earthquake && cd Earthquake
 
 # 2. Start the local Azure dependencies (Azurite, SQL Server, Service Bus emulator)
 cp .env.example .env          # dev-only SQL password; .env is gitignored
-docker compose up -d
-#    Wait until all containers are healthy:
+docker compose up -d --wait   # --wait blocks until every service is healthy
+#    NOTE: the Service Bus emulator opens its port in ~1s but its AMQP gateway only
+#    starts serving ~40s later. `--wait` gates on the `servicebus-ready` sidecar, which
+#    probes the real AMQP handshake — do NOT start the Functions host before it returns,
+#    or sends will fail with ConnectionRefused. Verify with:
 docker compose ps
 
 # 3. Configure the Functions host

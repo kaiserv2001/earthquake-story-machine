@@ -24,7 +24,7 @@ deployment to real Azure (out of sprint scope).
 ```
 bicep   : Bicep CLI version 0.44.1 (installed standalone — az CLI not present)
 dotnet  : 10.0.108  (projects target net8.0; CI pins 8.0.x via setup-dotnet)
-docker  : engine DOWN — Docker Desktop WSL integration is off in this distro
+docker  : engine 29.5.2 / Compose v5.1.4 — UP as of 2026-06-11 (was down at first authoring; see the Service Bus emulator AMQP fix section below for the live run)
 az      : not installed
 actionlint : 1.7.7 (downloaded standalone)
 ```
@@ -181,6 +181,67 @@ App Insights workspace-based (Log Analytics PerGB2018, 30-day retention).
    wherever the Azure CLI is present.
 3. **No real Azure deployment** — out of sprint scope by design. `deploy.yml` is gated
    behind the `DEPLOY_ENABLED` repo variable and validated offline only.
+
+## Service Bus emulator AMQP fix — root cause + fix (2026-06-11)
+
+**Context:** QA's live run (`_workspace/qa/07_e2e_q3_qa.md`, "Live run 2026-06-11") filed an
+environment defect: the emulator accepted TCP on `:5672` but served **zero bytes** to the AMQP
+handshake, so every SDK send failed `ConnectionRefused`. QA reproduced it peer-container, across
+image tags, and with a minimal SDK probe, and concluded the image was broken on this WSL2 kernel.
+
+**Root cause — a startup race, not a broken image.** With Docker available this run (engine
+29.5.2 / Compose v5.1.4) I brought the stack up and read the emulator's *own* logs (the step not
+yet taken). Its init runs a multi-step SQL bootstrap — drop + `CREATE DATABASE SbGatewayDatabase`,
+`CREATE DATABASE SbMessageContainerDatabase00001`, entity sync, then "Emulator Service is
+Successfully Up". The TCP listener on `:5672` opens almost immediately, but the **AMQP gateway does
+not serve until that bootstrap finishes**. Measured precisely:
+
+```
+TCP port 5672 accepts at +1s
+AMQP gateway serves (8 bytes) at +40s
+SUMMARY: port_open=+1s  amqp_serves=+40s  gap=39s
+```
+
+For ~39s the port accepts connections yet returns zero bytes to the AMQP header probe
+(`printf 'AMQP\x00\x01\x00\x00' | nc … 5672`) — **exactly** QA's symptom. QA connected inside that
+window; each "clean recreate across tags" simply restarted the same slow bootstrap, so the symptom
+reproduced every time and looked tag-independent. Nothing was wrong with `docker-compose.yml`,
+`config.json`, the connection strings, or the Functions code. Once the bootstrap completes the
+gateway serves normally and echoes the 8-byte AMQP header back.
+
+**Why no in-container healthcheck:** the emulator image is shell-less (CBL-Mariner, no
+`sh`/`bash`/`curl`/`wget`/`nc`) and ships no `HEALTHCHECK`, so it cannot probe itself — a known
+limitation (Azure/azure-service-bus-emulator-installer issues #35 and #88). A `depends_on:
+service_healthy` on the emulator is therefore impossible, and our prior `depends_on` only gated on
+the backing SQL container's health, never on the emulator's own AMQP readiness.
+
+**Fix (smallest that works) — a readiness sidecar in `docker-compose.yml`:**
+- Added service `servicebus-ready` (`busybox:1.36`, which *does* have `nc`) whose healthcheck sends
+  the AMQP 1.0 protocol header to `servicebus-emulator:5672` and is healthy only when bytes come
+  back (`… | wc -c | grep -qE '[1-9]'`). An open-but-not-serving port returns zero bytes → unhealthy.
+  `start_period: 60s`, `interval: 5s`, `retries: 20`.
+- Documented the race at the top of `docker-compose.yml` and switched the README quick-start to
+  `docker compose up -d --wait`, which now blocks until `servicebus-ready` is healthy — i.e. until
+  the AMQP gateway truly serves. No image wrapping, no fixed sleep.
+- No change needed to `config.json` (queue `quake-events` was always declared correctly) or to any
+  connection string.
+
+**Proof — real AMQP SDK send + receive (not a port probe):** a standalone `Azure.Messaging.ServiceBus`
+7.20.1 console app, using the exact `local.settings.example.json` connection string
+(`…;UseDevelopmentEmulator=true;`), sent a poller-shaped message to `quake-events` and received +
+completed it:
+
+```
+[probe] SEND OK
+[probe] RECEIVE OK, body: {"quakeId":"us7000probe","magnitude":5.5,"place":"128 km NW of Vallenar, Chile",…}
+[probe] ROUNDTRIP VERIFIED
+```
+
+Run after `docker compose up -d --wait` returned (all services healthy, `quake-sb-ready` healthy at
++42s). The emulator works; the transport hop QA had to substitute is now exercisable for real.
+
+**Stack left RUNNING** for QA's task #2 (live SB transit verification). Bring-up command for any
+future run: `cp .env.example .env && docker compose up -d --wait`.
 
 ## Result
 

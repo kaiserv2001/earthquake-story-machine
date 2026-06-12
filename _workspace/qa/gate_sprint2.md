@@ -21,7 +21,7 @@ Docker/Azure CLI verified at scripted-or-static; the two deferred items have con
 | B4 | local.settings ↔ Bicep app settings ↔ code reads | **PASS** | Static | All 6 app-specific keys match exact-string across all three sides; the 2 binding-expression keys (`ServiceBusConnection`, `UsgsPollSchedule`) included; 2 platform keys + 4 Azure-only keys correctly placed. Exhaustive reverse-grep: no read-without-setting, no setting-without-read. Independently corroborated by infra §1 (same 8-key table). Pass 06. |
 | B1 | poller serialize ↔ builder deserialize | **PASS (carried)** | Scripted | Both use shared `QuakeJson.Options` (UsgsPollerFunction.cs:41 ↔ StoryBuilderFunction.cs:26); proven with negative controls in Sprint-1 pass 04. Re-confirmed in Q.3 wiring read. |
 | B3/B5/B6/B7 | blob round-trip / SQL schema / clients / feed | **PASS (carried)** | — | Verified at Sprint-1 gate; unchanged in Sprint 2. |
-| e2e | poller→SB→builder log→`/api/cards`→frontend | **DEFERRED** | Static wiring PASS | All 5 hops statically coherent end-to-end; queue name `quake-events` agrees across poller output / builder trigger / emulator config; "Story card created" log present (line 52). Live run blocked on Docker. Pass 07. |
+| e2e | poller→SB→builder log→`/api/cards`→frontend | **PASS (live, no substitution)** | Live | Full chain proven live 2026-06-12 after the SB SDK fix: poller `[ServiceBusOutput]` send → 13 `StoryBuilderFunction` ServiceBusTrigger deliveries (broker SequenceNumbers) → 13 `Story card created…` → `/api/cards` = 13 cards → frontend render verified live 2026-06-11 (14/14). The SB transport hop no longer substituted (item 5 CLOSED). Pass 07. |
 
 ## Sprint-2 deliverable status
 - **Lane A (frontend) — COMPLETE.** A.1–A.4 ☑. List grid + badge tiers, hash-routed detail, all enrichment
@@ -46,10 +46,28 @@ Docker/Azure CLI verified at scripted-or-static; the two deferred items have con
    128 km NW of Vallenar, Chile -> 2026/06/us7000ss82.json`. `curl /api/cards` → **3 cards, camelCase** (B2
    live); `/api/cards/{id}` → full StoryCard with degraded sections + live weather/history (B3 live). Frontend
    served + driven by Playwright against the **live API**: **14/14** checks (list, detail, degraded card),
-   0 console errors (`frontend/.verify/live-*.png`). **One environment defect found, NOT project code:** the
-   Service Bus emulator's AMQP gateway does not serve (zero-byte AMQP handshake; reproduced peer-container and
-   across image tags `:latest`/`1.1.2`/`1.0.1`) — so the SB transport hop was substituted with a faithful
-   direct builder invocation. Filed for infra-engineer. Full evidence: pass 07 "Live run 2026-06-11".
+   0 console errors (`frontend/.verify/live-*.png`). **One defect found around the SB transport hop**, which
+   was substituted with a faithful direct builder invocation. The substitution residual is tracked as item 5
+   below — and as of 2026-06-12 it is **re-opened with a corrected root cause** (SDK incompatibility, a code
+   defect — not the emulator/race originally believed). Full evidence: pass 07 "Live run 2026-06-11" +
+   "Live SB transit verification 2026-06-12".
+
+5. **SB transport hop (the one substituted hop) — ✅ CLOSED 2026-06-12 (SDK fix verified live).** The hop now
+   runs end-to-end through the real Service Bus emulator with **zero substitution**. backend-engineer fixed the
+   root cause QA isolated (SDK version incompatibility) by bumping
+   `Microsoft.Azure.Functions.Worker.Extensions.ServiceBus` 5.16.0 → **5.24.0** (no code changes), which brings
+   the in-host transport to `Azure.Messaging.ServiceBus` **7.20.1** / WebJobs ext **5.17.0** (QA confirmed the
+   loaded `bin/output/.azurefunctions/Azure.Messaging.ServiceBus.dll` is asm 7.20.1.0 before judging). Live
+   re-run: `USGS poll: 13 quakes in feed, 13 new` → poller `[ServiceBusOutput]` `Succeeded` in ~1s (no
+   `ConnectionRefused`; the broken runs failed at ~12s) → **13 `StoryBuilderFunction` ServiceBusTrigger
+   executions**, each with broker `Trigger Details` (`SequenceNumber 3–15, DeliveryCount: 1, EnqueuedTimeUtc`) —
+   real queue delivery, not a `/admin` invoke → 13 `Story card created…` → `curl /api/cards` = **13 cards**
+   (camelCase), SQL `StoryCards` = 13, queue Peek = 0 remaining (all consumed). **The transport substitution from
+   the live run is retired.** Full evidence: pass 07 "Live SB transit verification 2026-06-12" → "Re-run after
+   SDK fix 2026-06-12". **NOTE — uncommitted working-tree changes:** the csproj bump (5.16.0 → 5.24.0), the infra
+   `servicebus-ready` sidecar, and the README `--wait` are all uncommitted; they should land together. (The
+   sidecar is still useful — it gates on the emulator's SQL bootstrap finishing — but was NOT sufficient alone;
+   the SDK version was the actual blocker.)
 2. **CI runner-green — ✅ CLOSED 2026-06-11.** Repo published to github.com/kaiserv2001/earthquake-story-machine;
    push to `main` ran CI green on the runner (run 27344216407, 47s) and Deploy correctly skipped via its
    `DEPLOY_ENABLED` gate (run 27344216420). The pinned `8.0.x` SDK build is now exercised in CI as planned.

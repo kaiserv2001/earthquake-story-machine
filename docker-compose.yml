@@ -4,6 +4,18 @@
 #   - mssql                : SQL Server for QuakeDb (SqlConnection)
 #   - servicebus-emulator  : Service Bus with the quake-events queue (ServiceBusConnection)
 #   - servicebus-sql       : SQL Server backing store the emulator requires (internal use only)
+#   - servicebus-ready     : readiness gate — probes the emulator's AMQP handshake (internal use only)
+#
+# IMPORTANT — Service Bus emulator startup race:
+#   The emulator opens its TCP listener on :5672 within ~1s, but its AMQP gateway does
+#   not actually serve until its internal SQL init finishes (~40s later). In that window
+#   the port accepts connections yet returns ZERO bytes to the AMQP handshake — so an SDK
+#   client that connects early fails with ConnectionRefused and the emulator looks broken.
+#   The emulator image is shell-less (no sh/curl/wget/nc), so it cannot healthcheck itself
+#   (Azure/azure-service-bus-emulator-installer issues #35, #88). We therefore gate
+#   readiness with the `servicebus-ready` sidecar below, which performs a real AMQP
+#   handshake probe. ALWAYS bring the stack up with `docker compose up -d --wait` (or wait
+#   for `servicebus-ready` to be healthy) before starting the Functions host.
 #
 # Dev-only passwords come from .env (see .env.example). Never commit a real .env.
 # Quick start: docs in README.md ("Local development").
@@ -73,6 +85,29 @@ services:
     depends_on:
       servicebus-sql:
         condition: service_healthy
+
+  # Readiness gate for the emulator's AMQP gateway. The emulator itself is shell-less and
+  # cannot run a healthcheck, and its TCP port opens ~39s before AMQP actually serves
+  # (see the startup-race note at the top of this file). This sidecar performs a true AMQP
+  # protocol handshake against the emulator and only reports healthy once real bytes come
+  # back. Gate the Functions host on this: `docker compose up -d --wait`.
+  servicebus-ready:
+    image: busybox:1.36
+    container_name: quake-sb-ready
+    command: ["sh", "-c", "echo 'waiting for servicebus-emulator AMQP gateway...'; sleep infinity"]
+    depends_on:
+      servicebus-emulator:
+        condition: service_started
+    healthcheck:
+      # Send the AMQP 1.0 protocol header to the emulator; a serving gateway echoes an
+      # 8-byte AMQP header back. An open-but-not-ready port returns zero bytes -> unhealthy.
+      test:
+        - "CMD-SHELL"
+        - "printf 'AMQP\\x00\\x01\\x00\\x00' | nc -w 3 servicebus-emulator 5672 | wc -c | grep -qE '[1-9]'"
+      interval: 5s
+      timeout: 8s
+      retries: 20
+      start_period: 60s
 
 volumes:
   azurite-data:
